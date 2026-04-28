@@ -91,6 +91,7 @@ export default function OrdersPage() {
   const [saving, setSaving]             = useState(false);
   const [shopId, setShopId]             = useState<string | null>(null);
   const [smsLog, setSmsLog]             = useState("");
+  const [smsStatus, setSmsStatus]       = useState<"sent" | "failed" | "">("");
   const [form, setForm]                 = useState({
     customer: "", phone: "", email: "", vehicle: "", problem: "", mechanic: "",
   });
@@ -144,6 +145,26 @@ export default function OrdersPage() {
     return acc;
   }, {} as Record<Status, number>);
 
+  async function sendSms(to: string, message: string) {
+    try {
+      const res = await fetch("/api/sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, message }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSmsStatus("sent");
+      } else {
+        console.error("SMS failed:", data.error);
+        setSmsStatus("failed");
+      }
+    } catch (err) {
+      console.error("SMS error:", err);
+      setSmsStatus("failed");
+    }
+  }
+
   async function updateStatus(orderId: string, newStatus: Status) {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
@@ -180,7 +201,26 @@ export default function OrdersPage() {
       "Ready pickup":     `Hi ${firstName}! Your ${vehicle} is ready for pickup! We're open until 6pm. See you soon.`,
       "Completed":        `Hi ${firstName}! Thanks for choosing us. Your ${vehicle} repair is complete. Drive safe!`,
     };
-    if (messages[newStatus]) setSmsLog(messages[newStatus]!);
+
+    if (messages[newStatus]) {
+      setSmsLog(messages[newStatus]!);
+      setSmsStatus("");
+      // Send real SMS via Twilio
+      if (order.customer_phone) {
+        sendSms(order.customer_phone, messages[newStatus]!);
+      }
+      // Log to messages table
+      if (shopId && order.customer_id) {
+        await supabase.from("messages").insert({
+          shop_id: shopId,
+          customer_id: order.customer_id,
+          repair_order_id: orderId,
+          phone: order.customer_phone || "",
+          body: messages[newStatus]!,
+          status: "sent",
+        });
+      }
+    }
   }
 
   async function handleAdd() {
@@ -194,7 +234,6 @@ export default function OrdersPage() {
 
     setSaving(true);
     try {
-      // Find or create customer
       let customerId: string;
       const { data: existingCustomer } = await supabase
         .from("customers")
@@ -205,7 +244,6 @@ export default function OrdersPage() {
 
       if (existingCustomer) {
         customerId = existingCustomer.id;
-        // Update email if provided and customer exists
         if (form.email.trim()) {
           await supabase.from("customers").update({ email: form.email.trim() }).eq("id", customerId);
         }
@@ -225,7 +263,6 @@ export default function OrdersPage() {
         customerId = newCustomer.id;
       }
 
-      // Create repair order
       const orderNumber = generateOrderNumber(orders.length);
       const { data: newOrder, error: orderError } = await supabase
         .from("repair_orders")
@@ -260,10 +297,26 @@ export default function OrdersPage() {
       };
 
       setOrders([enriched, ...orders]);
+
+      // Send check-in SMS
+      const checkInMsg = `Hi ${form.customer.split(" ")[0]}! Your ${form.vehicle} has been checked in at our shop. We'll keep you updated every step of the way.`;
+      setSmsLog(checkInMsg);
+      setSmsStatus("");
+      sendSms(form.phone.trim(), checkInMsg);
+
+      // Log message
+      await supabase.from("messages").insert({
+        shop_id: shopId,
+        customer_id: customerId,
+        repair_order_id: newOrder.id,
+        phone: form.phone.trim(),
+        body: checkInMsg,
+        status: "sent",
+      });
+
       setForm({ customer: "", phone: "", email: "", vehicle: "", problem: "", mechanic: "" });
       setFormError("");
       setShowAdd(false);
-      setSmsLog(`Hi ${form.customer.split(" ")[0]}! Your ${form.vehicle} has been checked in at our shop. We'll keep you updated every step of the way.`);
     } catch (err: any) {
       setFormError(err.message || "Failed to create repair order.");
     } finally {
@@ -351,15 +404,17 @@ export default function OrdersPage() {
 
           {/* SMS log */}
           {smsLog && (
-            <div className="mb-6 bg-emerald-950 border border-emerald-800 rounded-xl p-4">
+            <div className={`mb-6 border rounded-xl p-4 ${smsStatus === "failed" ? "bg-red-950 border-red-800" : "bg-emerald-950 border-emerald-800"}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
-                  <span className="text-xs font-medium text-emerald-400">SMS sent automatically</span>
+                  <div className={`w-1.5 h-1.5 rounded-full ${smsStatus === "failed" ? "bg-red-400" : "bg-emerald-400"}`}></div>
+                  <span className={`text-xs font-medium ${smsStatus === "failed" ? "text-red-400" : "text-emerald-400"}`}>
+                    {smsStatus === "sent" ? "SMS sent to customer" : smsStatus === "failed" ? "SMS failed — check Twilio verified numbers" : "Sending SMS…"}
+                  </span>
                 </div>
-                <button onClick={() => setSmsLog("")} className="text-zinc-600 hover:text-zinc-400 text-xs">dismiss</button>
+                <button onClick={() => { setSmsLog(""); setSmsStatus(""); }} className="text-zinc-600 hover:text-zinc-400 text-xs">dismiss</button>
               </div>
-              <p className="text-xs text-emerald-300/80 leading-relaxed">{smsLog}</p>
+              <p className={`text-xs leading-relaxed ${smsStatus === "failed" ? "text-red-300/80" : "text-emerald-300/80"}`}>{smsLog}</p>
             </div>
           )}
 
@@ -500,7 +555,7 @@ export default function OrdersPage() {
                   );
                 })}
               </div>
-              <p className="text-xs text-zinc-600 mt-2">Advancing status logs a record and sends an SMS to the customer.</p>
+              <p className="text-xs text-zinc-600 mt-2">Advancing status sends a real SMS to the customer via Twilio.</p>
             </div>
 
             <div className="space-y-2">
@@ -517,14 +572,13 @@ export default function OrdersPage() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowAdd(false)}/>
           <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md z-50 max-h-[90vh] overflow-y-auto">
             <h2 className="text-base font-semibold text-white mb-1">New repair order</h2>
-            <p className="text-xs text-zinc-500 mb-5">A check-in SMS will be sent to the customer automatically.</p>
+            <p className="text-xs text-zinc-500 mb-5">A check-in SMS will be sent to the customer via Twilio.</p>
 
             {formError && (
               <div className="bg-red-950 border border-red-800 text-red-400 text-xs rounded-lg px-3 py-2 mb-4">{formError}</div>
             )}
 
             <div className="space-y-4">
-              {/* Customer name */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Customer name</label>
                 <input type="text" placeholder="e.g. Mike Johnson"
@@ -534,7 +588,6 @@ export default function OrdersPage() {
                 />
               </div>
 
-              {/* Phone */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Customer phone</label>
                 <input type="tel" placeholder="e.g. (555) 842-1193"
@@ -553,7 +606,6 @@ export default function OrdersPage() {
                 )}
               </div>
 
-              {/* Email — optional */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Customer email <span className="text-zinc-600">(optional)</span></label>
                 <input type="email" placeholder="e.g. mike@gmail.com"
@@ -564,12 +616,8 @@ export default function OrdersPage() {
                 {form.email && !emailRegex.test(form.email) && (
                   <p className="text-xs text-red-400 mt-1">Enter a valid email or leave it blank</p>
                 )}
-                {form.email && emailRegex.test(form.email) && (
-                  <p className="text-xs text-emerald-500 mt-1">Valid email</p>
-                )}
               </div>
 
-              {/* Vehicle */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Vehicle (year / make / model)</label>
                 <input type="text" placeholder="e.g. 2019 Honda Civic"
@@ -579,7 +627,6 @@ export default function OrdersPage() {
                 />
               </div>
 
-              {/* Problem */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Problem reported</label>
                 <input type="text" placeholder="What did the customer say?"
@@ -589,7 +636,6 @@ export default function OrdersPage() {
                 />
               </div>
 
-              {/* Mechanic */}
               <div>
                 <label className="block text-xs text-zinc-400 mb-1.5">Assign mechanic <span className="text-zinc-600">(optional)</span></label>
                 <input type="text" placeholder="e.g. Carlos"
