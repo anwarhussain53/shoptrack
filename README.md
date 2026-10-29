@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ShopTrack
 
-## Getting Started
+ShopTrack is a web app for small auto repair shops. It keeps customers, vehicles, repair orders and invoices in one place, and can text customers when their car's status changes.
 
-First, run the development server:
+> Status: in active development.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Features
+
+- **Accounts** – email/password sign up, login, logout and password reset (Supabase Auth)
+- **Dashboard** – overview of active repair orders, customers and invoices for your shop
+- **Customers** – add, search and manage customer records
+- **Vehicles** – track each customer's vehicles
+- **Repair orders** – create orders, move them through statuses and keep a status history
+- **SMS updates** – send customers status messages through Twilio (`/api/sms`)
+- **Invoices** – build invoices with line items linked to a repair order
+- **Settings** – shop information and account management
+
+## Tech stack
+
+| Layer | Tools |
+| --- | --- |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| Backend & data | Supabase (Postgres + Auth) via `@supabase/ssr` |
+| Messaging | Twilio SMS |
+| Tooling | ESLint |
+
+## Data model
+
+Main Supabase tables: `shops`, `customers`, `vehicles`, `repair_orders`, `status_history`, `messages`, `invoices`, `invoice_items`.
+
+## Project structure
+
+```
+app/
+  api/sms/route.ts   # Twilio SMS endpoint
+  dashboard/         # shop overview
+  customers/         # customer management
+  vehicles/          # vehicle records
+  orders/            # repair orders + status history
+  invoices/          # invoices and line items
+  settings/          # shop + account settings
+  login/             # auth pages and server actions
+lib/supabase.ts      # Supabase client
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Getting started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Clone and install:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   git clone https://github.com/anwarhussain53/shoptrack.git
+   cd shoptrack
+   npm install
+   ```
 
-## Learn More
+2. Create `.env.local` in the project root:
 
-To learn more about Next.js, take a look at the following resources:
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   TWILIO_ACCOUNT_SID=your-twilio-account-sid
+   TWILIO_AUTH_TOKEN=your-twilio-auth-token
+   TWILIO_PHONE_NUMBER=+1XXXXXXXXXX
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Run the dev server:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+   Open http://localhost:3000.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm start` | Run the production build |
+| `npm run lint` | Lint with ESLint |
+
+## Roadmap
+
+- [ ] Search and filters on orders and customers
+- [ ] Tests for core flows
+- [ ] Responsive layout polish
+- [ ] Deploy to Vercel and add a live demo link
+
+## Author
+
+**Anwaar Hussain Mohammed** – [GitHub](https://github.com/anwarhussain53) · [LinkedIn](https://www.linkedin.com/in/anwaar-hussain-mohammed-892579204)
